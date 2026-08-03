@@ -1,5 +1,5 @@
 ---
-name: Developer image
+name: Build and push image
 on:
   push:
     branches:
@@ -27,7 +27,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-          tags: 'type=raw,value=dev'
+          tags: 'type=raw,value=latest'
           flavor: latest=false
       - name: Docker - Build / Push
         uses: docker/build-push-action@v6
