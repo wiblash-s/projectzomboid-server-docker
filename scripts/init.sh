@@ -13,7 +13,22 @@ else
     groupmod -o -g "${PGID}" steam
 fi
 
-chown -R steam:steam /project-zomboid /project-zomboid-config /home/steam/
+# Every persistent path that must be owned by the configured PUID/PGID.
+# This includes ALL Docker volume mount points plus the server home
+# directory (server binaries, scripts, rcon config and DepotDownloader cache).
+MANAGED_PATHS=(
+    /project-zomboid                          # server-files volume
+    "${CONFIG_DIR:-/project-zomboid-config}"  # server-data volume
+    /home/steam                               # server home (scripts, rcon.yml, caches)
+)
+
+# Recursively apply the PUID/PGID ownership to every managed path.
+apply_ownership() {
+    chown -R steam:steam "${MANAGED_PATHS[@]}"
+}
+
+# Apply ownership up front so the steam user can write during install/config.
+apply_ownership
 
 cat /branding
 
@@ -32,6 +47,11 @@ configure_memory
 # Append extra VM args if specified
 configure_vm_args
 
+# Re-apply ownership so files created during install/config (which run as
+# root) are handed back to the configured PUID/PGID across every mount.
+LogAction "Applying PUID:PGID (${PUID}:${PGID}) ownership to all mounted directories"
+apply_ownership
+
 # shellcheck disable=SC2317
 term_handler() {
     if ! shutdown_server; then
@@ -46,9 +66,11 @@ trap 'term_handler' SIGTERM
 # Check config for warnings
 check_admin_password
 
-# Start the server
-./start.sh &
+# Start the server as the steam (PUID:PGID) user so that every file it
+# creates at runtime (saves, logs, configs across all mounted volumes) is
+# owned by the configured PUID/PGID instead of root.
+gosu steam ./start.sh &
 
-# Process ID of su
+# Process ID of the server launcher
 killpid="$!"
 wait "$killpid"
